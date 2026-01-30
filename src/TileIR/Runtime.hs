@@ -2,10 +2,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module TileIR.Runtime
-  ( runTiled
-  , runTiledWithDebug
+  ( TiledKernel(..)
   , Array(..)
   , loadArray
   ) where
@@ -36,13 +38,69 @@ newtype Array a = Array [a]
 loadArray :: [a] -> IO (Array a)
 loadArray xs = return $ Array xs
 
--- | Run a tiled kernel on arrays
-runTiled :: forall n a b c. (KnownNat n, Storable a, Storable b, Storable c, Num c)
-         => (Tile n a -> Tile n b -> Tile n c)
-         -> Array a
-         -> Array b
-         -> IO (Array c)
-runTiled = runTiledWithDebug False
+-- | Typeclass for kernels with different numbers of inputs
+class TiledKernel f where
+  type InputArrays f :: *
+  type OutputArray f :: *
+  runTiled :: f -> InputArrays f -> IO (OutputArray f)
+
+-- | Instance for 1-input kernels: Tile n a -> Tile n c
+instance (KnownNat n, Storable a, Num a, Storable c, Num c)
+  => TiledKernel (Tile n a -> Tile n c) where
+  type InputArrays (Tile n a -> Tile n c) = Array a
+  type OutputArray (Tile n a -> Tile n c) = Array c
+  runTiled f arrA = runTiled1 False f arrA
+
+-- | Instance for 2-input kernels: Tile n a -> Tile n b -> Tile n c
+instance (KnownNat n, Storable a, Storable b, Storable c, Num c)
+  => TiledKernel (Tile n a -> Tile n b -> Tile n c) where
+  type InputArrays (Tile n a -> Tile n b -> Tile n c) = (Array a, Array b)
+  type OutputArray (Tile n a -> Tile n b -> Tile n c) = Array c
+  runTiled f (arrA, arrB) = runTiled2 False f arrA arrB
+
+-- | Instance for 3-input kernels: Tile n a -> Tile n b -> Tile n c -> Tile n d
+instance (KnownNat n, Storable a, Storable b, Storable c, Storable d, Num d)
+  => TiledKernel (Tile n a -> Tile n b -> Tile n c -> Tile n d) where
+  type InputArrays (Tile n a -> Tile n b -> Tile n c -> Tile n d) = (Array a, Array b, Array c)
+  type OutputArray (Tile n a -> Tile n b -> Tile n c -> Tile n d) = Array d
+  runTiled f (arrA, arrB, arrC) = runTiled3 False f arrA arrB arrC
+
+-- ============================================================================
+-- Internal implementations for different arities
+-- ============================================================================
+
+-- | 1-input kernel implementation
+runTiled1 :: forall n a c. (KnownNat n, Storable a, Num a, Storable c, Num c)
+          => Bool  -- Enable debug
+          -> (Tile n a -> Tile n c)
+          -> Array a
+          -> IO (Array c)
+runTiled1 enableDebug f (Array listA) =
+  -- Wrap in 2-input form by ignoring second argument
+  let f2 = \tileA (_ :: Tile n a) -> f tileA
+      -- Create dummy array with same size (filled with zeros, ignored anyway)
+      dummyArray = Array (replicate (length listA) (fromInteger 0 :: a))
+  in runTiled2 enableDebug f2 (Array listA) dummyArray
+
+-- | 2-input kernel implementation (original runTiled)
+runTiled2 :: forall n a b c. (KnownNat n, Storable a, Storable b, Storable c, Num c)
+          => Bool  -- Enable debug
+          -> (Tile n a -> Tile n b -> Tile n c)
+          -> Array a
+          -> Array b
+          -> IO (Array c)
+runTiled2 = runTiledWithDebug
+
+-- | 3-input kernel implementation (TODO: needs kernel3 codegen)
+runTiled3 :: forall n a b c d. (KnownNat n, Storable a, Storable b, Storable c, Storable d, Num d)
+          => Bool  -- Enable debug
+          -> (Tile n a -> Tile n b -> Tile n c -> Tile n d)
+          -> Array a
+          -> Array b
+          -> Array c
+          -> IO (Array d)
+runTiled3 _enableDebug _f _arrA _arrB _arrC =
+  error "3-input kernels not yet implemented - need to add kernel3 to CodeGen"
 
 -- | Run a tiled kernel on arrays with optional debug printing
 runTiledWithDebug :: forall n a b c. (KnownNat n, Storable a, Storable b, Storable c, Num c)

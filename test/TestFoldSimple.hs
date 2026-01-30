@@ -1,14 +1,13 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Main where
 
 import TileIR.DSL
 import TileIR.Runtime
 
--- | Simple fold test: just pass through for now
-vectorFold :: Tile 16 Float -> Tile 16 Float -> Tile 16 Float
-vectorFold a _ = tileFold (.+.) (lit 0) a
+-- | Simple fold test: sum all elements in a tile
+vectorFold :: Tile 16 Float -> Tile 16 Float
+vectorFold a = tileFold (.+.) (lit 0) a
 
 main :: IO ()
 main = do
@@ -17,9 +16,8 @@ main = do
   -- Test with 16 elements (1 tile)
   let input = [1..16] :: [Float]
   arrA <- loadArray input
-  arrB <- loadArray (replicate 16 0)
 
-  result <- runTiled @16 vectorFold arrA arrB
+  result <- runTiled vectorFold arrA
 
   let Array resultList = result
 
