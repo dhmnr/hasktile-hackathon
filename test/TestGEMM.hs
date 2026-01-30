@@ -41,7 +41,7 @@ main = do
   putStrLn $ "B[0:5,0:5] = " ++ show (take 25 b_matrix)
 
   -- Generate GEMM kernel
-  let mlir = generateGEMMKernel
+  let mlir = generateGEMMKernel n tile_size
 
   putStrLn "\n=== Generated GEMM MLIR ==="
   TIO.putStrLn mlir

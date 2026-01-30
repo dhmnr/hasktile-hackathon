@@ -6,11 +6,12 @@ module TileIR.GEMM
 
 import qualified Data.Text as T
 
--- | Generate GEMM kernel for square 4096x4096 @ 4096x4096 multiplication
+-- | Generate GEMM kernel for square NxN @ NxN multiplication
 -- Each tile block computes 64x64 output tiles of C
 -- This implements: C = A @ B
-generateGEMMKernel :: T.Text
-generateGEMMKernel = T.unlines
+-- Parameters: matrix_size (N), tile_size (64)
+generateGEMMKernel :: Int -> Int -> T.Text
+generateGEMMKernel matrix_size tile_size = T.unlines
   [ "cuda_tile.module @gemm_module {"
   , "  entry @gemm_kernel("
   , "    %a_ptr_base_scalar: tile<ptr<f32>>,"
@@ -20,18 +21,23 @@ generateGEMMKernel = T.unlines
   , "    // Get block indices"
   , "    %block_x_index, %block_y_index, %block_z_index = get_tile_block_id : tile<i32>"
   , ""
-  , "    // Tile dimensions (64x64 tiles)"
-  , "    %tile_size = constant <i32: 64> : tile<i32>"
-  , "    %stride_factor = constant <i32: 4096> : tile<i32>"
-  , "    %k_tiles = constant <i32: 64> : tile<i32>  // 4096 / 64 = 64 k-tiles"
+  , "    // Tile dimensions"
+  , "    %tile_size = constant <i32: " <> T.pack (show tile_size) <> "> : tile<i32>"
+  , "    %stride_scalar = constant <i32: " <> T.pack (show matrix_size) <> "> : tile<i32>"
+  , "    %k_tiles = constant <i32: " <> T.pack (show (matrix_size `div` tile_size)) <> "> : tile<i32>"
+  , ""
+  , "    // Broadcast stride to 2D for matrix operations"
+  , "    %stride_1d = reshape %stride_scalar : tile<i32> -> tile<1xi32>"
+  , "    %stride_1d_bcast = broadcast %stride_1d : tile<1xi32> -> tile<64xi32>"
+  , "    %stride_factor = reshape %stride_1d_bcast : tile<64xi32> -> tile<64x1xi32>"
+  , "    %stride_factor_2d = broadcast %stride_factor : tile<64x1xi32> -> tile<64x64xi32>"
   , ""
   , "    // Initialize accumulator to zero"
   , "    %init_accum = constant <f32: 0.000000e+00> : tile<64x64xf32>"
   , ""
   , "    // Compute A tile pointer (row-major)"
-  , "    // A starts at: block_x_index * 64 * 4096"
+  , "    // A starts at: block_x_index * 64"
   , "    %a_row_start = muli %block_x_index, %tile_size : tile<i32>"
-  , "    %a_row_offset = muli %a_row_start, %stride_factor : tile<i32>"
   , ""
   , "    // Compute B tile pointer (row-major)"
   , "    // B starts at: block_y_index * 64"
@@ -49,7 +55,7 @@ generateGEMMKernel = T.unlines
   , "    // Broadcast row indices to matrix (each column identical)"
   , "    %a_row_matrix = reshape %a_row_indices : tile<64xi32> -> tile<64x1xi32>"
   , "    %a_row_broadcast = broadcast %a_row_matrix : tile<64x1xi32> -> tile<64x64xi32>"
-  , "    %a_row_offsets = muli %a_row_broadcast, %stride_factor : tile<64x64xi32>"
+  , "    %a_row_offsets = muli %a_row_broadcast, %stride_factor_2d : tile<64x64xi32>"
   , ""
   , "    // Column indices start at 0 (will be updated in loop)"
   , "    %a_col_matrix = reshape %tile_range : tile<64xi32> -> tile<1x64xi32>"
@@ -60,7 +66,7 @@ generateGEMMKernel = T.unlines
   , "    // Row indices start at 0 (will be updated in loop)"
   , "    %b_row_matrix = reshape %tile_range : tile<64xi32> -> tile<64x1xi32>"
   , "    %b_row_broadcast = broadcast %b_row_matrix : tile<64x1xi32> -> tile<64x64xi32>"
-  , "    %b_row_offsets = muli %b_row_broadcast, %stride_factor : tile<64x64xi32>"
+  , "    %b_row_offsets = muli %b_row_broadcast, %stride_factor_2d : tile<64x64xi32>"
   , ""
   , "    // Column indices: block_y_index * 64 + [0..63]"
   , "    %b_col_base_1d = reshape %b_col_start : tile<i32> -> tile<1xi32>"
@@ -99,11 +105,11 @@ generateGEMMKernel = T.unlines
   , "      %C_tile_acc = mmaf %A_tile, %B_tile, %acc_prev : tile<64x64xf32>, tile<64x64xf32>, tile<64x64xf32>"
   , ""
   , "      // Advance pointers for next k-tile"
-  , "      // A advances by 64 columns (right)"
+  , "      // A advances by tile_size columns (right)"
   , "      %a_tile_ptr_next = offset %a_tile_ptr_prev, %stride_k : tile<64x64xptr<f32>>, tile<64x64xi32> -> tile<64x64xptr<f32>>"
   , ""
-  , "      // B advances by 64 rows down (stride * 64)"
-  , "      %b_stride_full = constant <i32: 262144> : tile<64x64xi32>  // 4096 * 64"
+  , "      // B advances by tile_size rows down (stride * tile_size)"
+  , "      %b_stride_full = constant <i32: " <> T.pack (show (matrix_size * tile_size)) <> "> : tile<64x64xi32>"
   , "      %b_tile_ptr_next = offset %b_tile_ptr_prev, %b_stride_full : tile<64x64xptr<f32>>, tile<64x64xi32> -> tile<64x64xptr<f32>>"
   , ""
   , "      continue %C_tile_acc, %a_tile_ptr_next, %b_tile_ptr_next : tile<64x64xf32>, tile<64x64xptr<f32>>, tile<64x64xptr<f32>>"
@@ -116,7 +122,7 @@ generateGEMMKernel = T.unlines
   , "    %c_row_indices = addi %c_row_base_bcast, %tile_range : tile<64xi32>"
   , "    %c_row_matrix = reshape %c_row_indices : tile<64xi32> -> tile<64x1xi32>"
   , "    %c_row_broadcast = broadcast %c_row_matrix : tile<64x1xi32> -> tile<64x64xi32>"
-  , "    %c_row_offsets = muli %c_row_broadcast, %stride_factor : tile<64x64xi32>"
+  , "    %c_row_offsets = muli %c_row_broadcast, %stride_factor_2d : tile<64x64xi32>"
   , ""
   , "    %c_col_start = muli %block_y_index, %tile_size : tile<i32>"
   , "    %c_col_base_1d = reshape %c_col_start : tile<i32> -> tile<1xi32>"
