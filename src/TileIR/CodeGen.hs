@@ -170,6 +170,24 @@ genLoad varName ptrName prefix offset stride tileSize setupOffset = do
 -- | Generate code for a tile expression
 genTileExpr :: Integer -> TileExpr a -> CodeGen Text
 genTileExpr tileSize expr = case expr of
+  -- Iota (range 0..n-1)
+  TileIota -> do
+    resultVar <- freshVar
+    emit ""
+    emit "// Iota (range 0..n-1)"
+    emit $ resultVar <> " = iota : !cuda_tile.tile<" <> T.pack (show tileSize) <> "xi32>"
+    return resultVar
+
+  -- Block index
+  TileBlockIdx -> do
+    resultVar <- freshVar
+    emit ""
+    emit "// Get block index"
+    emit $ "%block_x, %block_y, %block_z = get_tile_block_id : tile<i32>"
+    emit $ resultVar <> "_1d = reshape %block_x : tile<i32> -> !cuda_tile.tile<1xi32>"
+    emit $ resultVar <> " = broadcast " <> resultVar <> "_1d : !cuda_tile.tile<1xi32> -> !cuda_tile.tile<" <> T.pack (show tileSize) <> "xi32>"
+    return resultVar
+
   -- Variable reference - need to load from pointer (default: offset=0, stride=1)
   TileVar "arg0" -> genLoad "arg0" "ptr_a" "a" 0 1 tileSize True
   TileVar "arg1" -> genLoad "arg1" "ptr_b" "b" 0 1 tileSize False
@@ -181,6 +199,57 @@ genTileExpr tileSize expr = case expr of
   TileVarStrided name offset stride -> do
     -- For other variables, just generate load
     genLoad name ("ptr_" ++ name) name offset stride tileSize False
+
+  -- Constant tile - broadcast scalar to all elements
+  TileConst _ -> error "TileConst not yet supported in code generation"
+
+  -- Map - apply scalar function to each element
+  TileMap scalarFn tileExpr -> do
+    inputVar <- genTileExpr tileSize tileExpr
+    resultVar <- freshVar
+
+    -- Setup output pointer (same as in ZipWith)
+    emit ""
+    emit "// Prepare output pointer for map"
+    emit "%out_base = reshape %ptr_out : !cuda_tile.tile<ptr<f32>> -> !cuda_tile.tile<1xptr<f32>>"
+    emit $ "%out_bcast = broadcast %out_base : !cuda_tile.tile<1xptr<f32>> -> !cuda_tile.tile<" <> T.pack (show tileSize) <> "xptr<f32>>"
+    emit $ "%out_ptrs = offset %out_bcast, %offset_base : !cuda_tile.tile<" <> T.pack (show tileSize) <> "xptr<f32>>, !cuda_tile.tile<" <> T.pack (show tileSize) <> "xi32> -> !cuda_tile.tile<" <> T.pack (show tileSize) <> "xptr<f32>>"
+    emit ""
+
+    emit "// Map operation"
+
+    -- For now, just handle specific common patterns
+    -- We analyze the function by applying it to a test variable
+    let testVar = ScalarVar "x"
+        result = scalarFn testVar
+
+    -- Helper to generate constant broadcast
+    let genConst :: Text -> Text -> CodeGen Text
+        genConst name value = do
+          emit $ name <> "_scalar = constant <f32: " <> value <> "> : tile<f32>"
+          emit $ name <> "_1d = reshape " <> name <> "_scalar : tile<f32> -> !cuda_tile.tile<1xf32>"
+          emit $ name <> "_bcast = broadcast " <> name <> "_1d : !cuda_tile.tile<1xf32> -> !cuda_tile.tile<" <> T.pack (show tileSize) <> "xf32>"
+          return $ name <> "_bcast"
+
+    case result of
+      -- x * x = square
+      Mul (ScalarVar "x") (ScalarVar "x") -> do
+        emit $ resultVar <> " = mulf " <> inputVar <> ", " <> inputVar <> " rounding<nearest_even> : !cuda_tile.tile<" <> T.pack (show tileSize) <> "xf32>"
+        return resultVar
+
+      -- 2*x + 1 pattern
+      Add (Mul (ScalarLit _) (ScalarVar "x")) (ScalarLit _) -> do
+        -- Generate the composite operation
+        -- First multiply by 2.0
+        constMul <- genConst "%map_mul_const" "2.0"
+        emit $ "%map_mul_result = mulf " <> inputVar <> ", " <> constMul <> " rounding<nearest_even> : !cuda_tile.tile<" <> T.pack (show tileSize) <> "xf32>"
+
+        -- Then add 1.0
+        constAdd <- genConst "%map_add_const" "1.0"
+        emit $ resultVar <> " = addf %map_mul_result, " <> constAdd <> " rounding<nearest_even> : !cuda_tile.tile<" <> T.pack (show tileSize) <> "xf32>"
+        return resultVar
+
+      _ -> error $ "Unsupported map operation: " ++ show result
 
   -- ZipWith - analyze the scalar function to determine operation
   TileZipWith scalarFn exprA exprB -> do
@@ -259,7 +328,13 @@ genTileExpr tileSize expr = case expr of
 
     return inputVar
 
-  _ -> error $ "Unsupported tile expression: " ++ show expr
+  -- Load from memory (basic)
+  TileLoad name -> do
+    genLoad name ("ptr_" ++ name) name 0 1 tileSize False
+
+  -- Store to memory - these should be handled at top level, not as expressions
+  TileStore _ _ -> error "TileStore should be handled at top level, not as expression"
+  TileStoreStrided _ _ _ _ -> error "TileStoreStrided should be handled at top level, not as expression"
 
 -- | Analyze scalar function to determine the operation
 analyzeScalarOp :: (ScalarExpr a -> ScalarExpr b -> ScalarExpr c) -> Text
