@@ -9,9 +9,11 @@ module TileIR.DSL
   , tileMap
   , tileZipWith
   , tileFold
+  , tileScan
   , tileConst
-  , tileLoad
-  , tileStore
+  -- NOTE: tileLoad/tileStore removed from public API
+  -- The kernel parameters ARE the tiles - no need to load explicitly!
+  -- Stride will be specified at GPU buffer level (see Runtime)
   -- Scalar operations
   , lit
   , (.+.), (.-.), (.*.)
@@ -67,17 +69,58 @@ tileFold :: forall n a. KnownNat n
          -> Tile n a
 tileFold f init (Tile _ expr) = Tile (Proxy @n) (TileFold f init expr)
 
+-- | Scan (prefix scan) a tile with an accumulator
+-- Returns tile where each element is the accumulated result up to that point
+-- Example: tileScan (.+.) (lit 0) [1,2,3,4] = [1,3,6,10]
+tileScan :: forall n a. KnownNat n
+         => (ScalarExpr a -> ScalarExpr a -> ScalarExpr a)
+         -> ScalarExpr a  -- Initial accumulator value
+         -> Tile n a
+         -> Tile n a
+tileScan f init (Tile _ expr) = Tile (Proxy @n) (TileScan f init expr)
+
 -- | Constant tile (all elements same value)
 tileConst :: forall n a. KnownNat n => a -> Tile n a
 tileConst val = Tile (Proxy @n) (TileConst val)
 
--- | Load tile from memory
+-- | Load tile from memory (basic: offset=0, stride=1)
 tileLoad :: forall n a. KnownNat n => String -> Tile n a
 tileLoad name = Tile (Proxy @n) (TileLoad name)
 
--- | Store tile to memory
+-- | Load tile from memory with stride and offset
+-- Example: tileLoadStrided "A" 64 2 loads elements [64, 66, 68, 70, ...]
+tileLoadStrided :: forall n a. KnownNat n
+                => String    -- Variable name
+                -> Int       -- Offset (starting element index)
+                -> Int       -- Stride (elements between loads)
+                -> Tile n a
+tileLoadStrided name offset stride =
+  Tile (Proxy @n) (TileVarStrided name offset stride)
+
+-- | Load tile with offset only (stride=1)
+-- Example: tileLoadOffset "A" 100 loads elements [100, 101, 102, ...]
+tileLoadOffset :: forall n a. KnownNat n => String -> Int -> Tile n a
+tileLoadOffset name offset = tileLoadStrided name offset 1
+
+-- | Store tile to memory (basic: offset=0, stride=1)
 tileStore :: forall n a. KnownNat n => String -> Tile n a -> Tile n ()
 tileStore name (Tile _ expr) = Tile (Proxy @n) (TileStore name expr)
+
+-- | Store tile to memory with stride and offset
+-- Example: tileStoreStrided "out" 64 2 tile stores to [64, 66, 68, 70, ...]
+tileStoreStrided :: forall n a. KnownNat n
+                 => String    -- Destination name
+                 -> Int       -- Offset (starting element index)
+                 -> Int       -- Stride (elements between stores)
+                 -> Tile n a
+                 -> Tile n ()
+tileStoreStrided name offset stride (Tile _ expr) =
+  Tile (Proxy @n) (TileStoreStrided name offset stride expr)
+
+-- | Store tile with offset only (stride=1)
+-- Example: tileStoreOffset "out" 100 tile stores to [100, 101, 102, ...]
+tileStoreOffset :: forall n a. KnownNat n => String -> Int -> Tile n a -> Tile n ()
+tileStoreOffset name offset tile = tileStoreStrided name offset 1 tile
 
 -- Scalar operations
 
