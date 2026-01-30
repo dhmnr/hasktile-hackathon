@@ -155,6 +155,11 @@ data ScalarExpr a where
   Add :: Num a => ScalarExpr a -> ScalarExpr a -> ScalarExpr a
   Sub :: Num a => ScalarExpr a -> ScalarExpr a -> ScalarExpr a
   Mul :: Num a => ScalarExpr a -> ScalarExpr a -> ScalarExpr a
+  Div :: Fractional a => ScalarExpr a -> ScalarExpr a -> ScalarExpr a
+  Max :: Ord a => ScalarExpr a -> ScalarExpr a -> ScalarExpr a
+
+  -- Math functions
+  Exp :: Floating a => ScalarExpr a -> ScalarExpr a
 
   -- Comparison
   Lt :: Ord a => ScalarExpr a -> ScalarExpr a -> ScalarExpr Bool
@@ -168,6 +173,9 @@ instance Show (ScalarExpr a) where
   show (Add a b) = "Add (" ++ show a ++ ") (" ++ show b ++ ")"
   show (Sub a b) = "Sub (" ++ show a ++ ") (" ++ show b ++ ")"
   show (Mul a b) = "Mul (" ++ show a ++ ") (" ++ show b ++ ")"
+  show (Div a b) = "Div (" ++ show a ++ ") (" ++ show b ++ ")"
+  show (Max a b) = "Max (" ++ show a ++ ") (" ++ show b ++ ")"
+  show (Exp a) = "Exp (" ++ show a ++ ")"
   show (Lt a b) = "Lt (" ++ show a ++ ") (" ++ show b ++ ")"
   show (Gt a b) = "Gt (" ++ show a ++ ") (" ++ show b ++ ")"
   show (Eq a b) = "Eq (" ++ show a ++ ") (" ++ show b ++ ")"

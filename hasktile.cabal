@@ -140,3 +140,13 @@ executable test-map-zip-simple
   hs-source-dirs:   test
   default-language: Haskell2010
   ghc-options:      -Wall
+
+executable test-softmax
+  main-is:          TestSoftmax.hs
+  build-depends:
+    base,
+    hasktile
+
+  hs-source-dirs:   test
+  default-language: Haskell2010
+  ghc-options:      -Wall

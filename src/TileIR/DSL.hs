@@ -16,7 +16,8 @@ module TileIR.DSL
   -- Stride will be specified at GPU buffer level (see Runtime)
   -- Scalar operations
   , lit
-  , (.+.), (.-.), (.*.)
+  , (.+.), (.-.), (.*.), (./.), maxOf
+  , exp'
   , (.<.), (.>.), (.==.)
   ) where
 
@@ -140,6 +141,18 @@ lit = ScalarLit
 (.*.) :: Num a => ScalarExpr a -> ScalarExpr a -> ScalarExpr a
 (.*.) = Mul
 
+-- | Division
+(./.) :: Fractional a => ScalarExpr a -> ScalarExpr a -> ScalarExpr a
+(./.) = Div
+
+-- | Maximum
+maxOf :: Ord a => ScalarExpr a -> ScalarExpr a -> ScalarExpr a
+maxOf = Max
+
+-- | Exponential
+exp' :: Floating a => ScalarExpr a -> ScalarExpr a
+exp' = Exp
+
 -- | Less than
 (.<.) :: Ord a => ScalarExpr a -> ScalarExpr a -> ScalarExpr Bool
 (.<.) = Lt
@@ -153,5 +166,5 @@ lit = ScalarLit
 (.==.) = Eq
 
 infixl 6 .+., .-.
-infixl 7 .*.
+infixl 7 .*., ./.
 infix 4 .<., .>., .==.

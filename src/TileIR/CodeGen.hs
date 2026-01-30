@@ -297,8 +297,10 @@ genTileExpr tileSize expr = case expr of
     emit ""
     emit $ "  // Accumulate"
     case op of
-      "addf" -> emit "  %acc_next = addf %acc_iter, %elem : tile<f32>"
-      "mulf" -> emit "  %acc_next = mulf %acc_iter, %elem : tile<f32>"
+      "addf" -> emit "  %acc_next = addf %acc_iter, %elem rounding<nearest_even> : tile<f32>"
+      "mulf" -> emit "  %acc_next = mulf %acc_iter, %elem rounding<nearest_even> : tile<f32>"
+      "maxf" -> emit "  %acc_next = maxf %acc_iter, %elem : tile<f32>"
+      "divf" -> emit "  %acc_next = divf %acc_iter, %elem rounding<nearest_even> : tile<f32>"
       _ -> emit "  %acc_next = %acc_iter  // Unsupported op"
     emit ""
     emit "  yield %acc_next : tile<f32>"
@@ -346,6 +348,8 @@ analyzeScalarOp f =
     Add _ _ -> "addf"
     Mul _ _ -> "mulf"
     Sub _ _ -> "subf"
+    Div _ _ -> "divf"
+    Max _ _ -> "maxf"
     _ -> error "Unsupported scalar operation"
 
 -- | Generate fold kernel: each block combines 2 tiles element-wise
