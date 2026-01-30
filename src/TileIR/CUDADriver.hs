@@ -182,3 +182,18 @@ launchKernel1D func gridSize params = do
     checkCUDA "cuLaunchKernel" result
   result <- cuCtxSynchronize
   checkCUDA "cuCtxSynchronize" result
+
+-- | Launch kernel with 2D grid
+launchKernel2D :: CUfunction -> Int -> Int -> [Ptr ()] -> IO ()
+launchKernel2D func gridX gridY params = do
+  withArray params $ \pParams -> do
+    result <- cuLaunchKernel func
+              (fromIntegral gridX) (fromIntegral gridY) 1  -- grid: gridX x gridY x 1
+              1 1 1                                          -- block: 1 x 1 x 1
+              0                                              -- shared mem
+              nullPtr                                        -- stream
+              pParams                                        -- kernel params
+              nullPtr                                        -- extra
+    checkCUDA "cuLaunchKernel" result
+  result <- cuCtxSynchronize
+  checkCUDA "cuCtxSynchronize" result

@@ -8,7 +8,7 @@ module TileIR.Types where
 import GHC.TypeLits (Nat, KnownNat)
 import Data.Proxy
 
--- | Tile - sized array living in GPU registers
+-- | 1D Tile - sized array living in GPU registers
 data Tile (n :: Nat) a = Tile
   { tileSize :: Proxy n
   , tileExpr :: TileExpr a
@@ -16,10 +16,71 @@ data Tile (n :: Nat) a = Tile
 
 deriving instance Show a => Show (Tile n a)
 
+-- | 2D Tile - sized 2D array living in GPU registers
+data Tile2D (m :: Nat) (n :: Nat) a = Tile2D
+  { tile2DRows :: Proxy m
+  , tile2DCols :: Proxy n
+  , tile2DExpr :: Tile2DExpr a
+  }
+
+deriving instance Show a => Show (Tile2D m n a)
+
+-- | 2D Tile expression AST
+data Tile2DExpr a where
+  -- Variable reference for 2D tiles
+  Tile2DVar :: String -> Tile2DExpr a
+
+  -- Constant 2D tile
+  Tile2DConst :: a -> Tile2DExpr a
+
+  -- Reshape 1D tile to 2D
+  Tile2DReshape1D :: TileExpr a -> Tile2DExpr a
+
+  -- Reshape scalar to 2D
+  Tile2DReshapeScalar :: TileExpr a -> Tile2DExpr a
+
+  -- Broadcast 2D tile
+  Tile2DBroadcast :: Tile2DExpr a -> Tile2DExpr a
+
+  -- Element-wise operations on 2D tiles
+  Tile2DAdd :: Tile2DExpr a -> Tile2DExpr a -> Tile2DExpr a
+  Tile2DMul :: Tile2DExpr a -> Tile2DExpr a -> Tile2DExpr a
+
+  -- Matrix multiply-accumulate (A @ B + C)
+  Tile2DMMAF :: Tile2DExpr a -> Tile2DExpr a -> Tile2DExpr a -> Tile2DExpr a
+
+  -- Offset pointer (for address computation)
+  Tile2DOffset :: Tile2DExpr a -> Tile2DExpr Int -> Tile2DExpr a
+
+  -- Load from 2D pointer tile
+  Tile2DLoad :: Tile2DExpr a -> Tile2DExpr a
+
+  -- Store to 2D pointer tile
+  Tile2DStore :: Tile2DExpr a -> Tile2DExpr a -> Tile2DExpr ()
+
+instance Show (Tile2DExpr a) where
+  show (Tile2DVar name) = "Tile2DVar " ++ show name
+  show (Tile2DConst _) = "Tile2DConst <value>"
+  show (Tile2DReshape1D _) = "Tile2DReshape1D"
+  show (Tile2DReshapeScalar _) = "Tile2DReshapeScalar"
+  show (Tile2DBroadcast _) = "Tile2DBroadcast"
+  show (Tile2DAdd _ _) = "Tile2DAdd"
+  show (Tile2DMul _ _) = "Tile2DMul"
+  show (Tile2DMMAF _ _ _) = "Tile2DMMAF"
+  show (Tile2DOffset _ _) = "Tile2DOffset"
+  show (Tile2DLoad _) = "Tile2DLoad"
+  show (Tile2DStore _ _) = "Tile2DStore"
+
 -- | Tile expression AST
 data TileExpr a where
   -- Variable reference (basic, stride=1, offset=0)
   TileVar :: String -> TileExpr a
+
+  -- Iota/arange (0, 1, 2, ..., n-1)
+  TileIota :: TileExpr Int
+
+  -- Get block index
+  TileBlockIdx :: TileExpr Int
 
   -- Variable reference with stride and offset
   TileVarStrided :: String   -- variable name
@@ -63,6 +124,8 @@ data TileExpr a where
 -- Manual Show instance (can't derive for functions)
 instance Show (TileExpr a) where
   show (TileVar name) = "TileVar " ++ show name
+  show TileIota = "TileIota"
+  show TileBlockIdx = "TileBlockIdx"
   show (TileVarStrided name offset stride) =
     "TileVarStrided " ++ show name ++
     " offset=" ++ show offset ++
@@ -129,6 +192,8 @@ data TileKernel where
 -- | Check if an expression contains a fold operation
 containsFold :: TileExpr a -> Bool
 containsFold (TileVar _) = False
+containsFold TileIota = False
+containsFold TileBlockIdx = False
 containsFold (TileVarStrided _ _ _) = False
 containsFold (TileConst _) = False
 containsFold (TileMap _ expr) = containsFold expr
@@ -142,6 +207,8 @@ containsFold (TileStoreStrided _ _ _ expr) = containsFold expr
 -- | Check if an expression contains a scan operation
 containsScan :: TileExpr a -> Bool
 containsScan (TileVar _) = False
+containsScan TileIota = False
+containsScan TileBlockIdx = False
 containsScan (TileVarStrided _ _ _) = False
 containsScan (TileConst _) = False
 containsScan (TileMap _ expr) = containsScan expr

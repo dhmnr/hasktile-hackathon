@@ -13,6 +13,7 @@ library
     TileIR.CodeGen
     TileIR.Runtime
     TileIR.CUDADriver
+    TileIR.GEMM
 
   build-depends:
     base >= 4.14 && < 5,
@@ -101,6 +102,20 @@ executable test-fold-multi
   build-depends:
     base,
     hasktile
+
+  hs-source-dirs:   test
+  default-language: Haskell2010
+  ghc-options:      -Wall
+
+executable test-gemm
+  main-is:          TestGEMM.hs
+  build-depends:
+    base,
+    hasktile,
+    text,
+    process,
+    temporary,
+    filepath
 
   hs-source-dirs:   test
   default-language: Haskell2010
