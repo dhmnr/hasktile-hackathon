@@ -1,0 +1,53 @@
+cabal-version:      3.0
+name:               hasktile
+version:            0.1.0.0
+synopsis:           Haskell EDSL for TileIR GPU programming
+license:            BSD-3-Clause
+author:             Shadeform
+build-type:         Simple
+
+library
+  exposed-modules:
+    TileIR.Types
+    TileIR.DSL
+    TileIR.CodeGen
+    TileIR.Runtime
+    TileIR.CUDADriver
+
+  build-depends:
+    base >= 4.14 && < 5,
+    text >= 1.2,
+    mtl >= 2.2,
+    containers >= 0.6,
+    process >= 1.6,
+    temporary >= 1.3,
+    filepath >= 1.4,
+    bytestring >= 0.10
+
+  hs-source-dirs:   src
+  default-language: Haskell2010
+  ghc-options:      -Wall
+  extra-libraries:  cuda
+  include-dirs:     /usr/local/cuda/include
+  extra-lib-dirs:   /usr/local/cuda/lib64
+
+executable hasktile-example
+  main-is:          Main.hs
+  build-depends:
+    base,
+    hasktile
+
+  hs-source-dirs:   examples
+  default-language: Haskell2010
+  ghc-options:      -Wall
+
+executable test-mul
+  main-is:          TestMul.hs
+  build-depends:
+    base,
+    hasktile,
+    text
+
+  hs-source-dirs:   examples
+  default-language: Haskell2010
+  ghc-options:      -Wall
