@@ -67,7 +67,7 @@ main = do
   -- Test 3: ZipWith (multiplication)
   putStrLn "\n\n=== Test 3: ZipWith - Element-wise multiplication ==="
   let inputA3 = [1..16] :: [Float]
-  let inputB3 = [2, 2..32] :: [Float]
+  let inputB3 = [2, 4..32] :: [Float]  -- Even numbers from 2 to 32
   arrA3 <- loadArray inputA3
   arrB3 <- loadArray inputB3
   result3 <- runTiled mulKernel (arrA3, arrB3)

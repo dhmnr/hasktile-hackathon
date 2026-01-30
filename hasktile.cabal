@@ -130,3 +130,13 @@ executable test-map-zip
   hs-source-dirs:   test
   default-language: Haskell2010
   ghc-options:      -Wall
+
+executable test-map-zip-simple
+  main-is:          TestMapZipSimple.hs
+  build-depends:
+    base,
+    hasktile
+
+  hs-source-dirs:   test
+  default-language: Haskell2010
+  ghc-options:      -Wall
